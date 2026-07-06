@@ -1,26 +1,53 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import axios from "axios";
 import TodoForm from "./components/TodoForm";
 import TodoList from "./components/TodoList";
 import TaskStats from "./components/TaskStats";
 import { Search, Sparkles, AlertCircle, RefreshCw, Layers, SlidersHorizontal, Sun, Moon } from "lucide-react";
 
-const API = "http://localhost:5000/api/tasks";
+const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api/tasks";
 
 function App() {
   const [tasks, setTasks] = useState([]);
   const [editTask, setEditTask] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  
+
   // Filtering states
   const [filterStatus, setFilterStatus] = useState("all"); // all, active, completed
   const [filterPriority, setFilterPriority] = useState("all"); // all, high, medium, low
   const [filterCategory, setFilterCategory] = useState("all"); // all, work, personal, shopping, etc.
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Custom toast notification state
   const [toast, setToast] = useState({ message: "", type: "", show: false });
+
+  // Client-side filtering logic
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      // 1. Status Filter
+      if (filterStatus === "completed" && !task.completed) return false;
+      if (filterStatus === "active" && task.completed) return false;
+
+      // 2. Priority Filter
+      if (filterPriority !== "all" && task.priority !== filterPriority) return false;
+
+      // 3. Category Filter
+      if (filterCategory !== "all" && task.category !== filterCategory) return false;
+
+      // 4. Search Filter
+      if (searchQuery.trim() !== "") {
+        const query = searchQuery.toLowerCase().trim();
+        const titleMatch = task.title.toLowerCase().includes(query);
+        const descMatch = task.description
+          ? task.description.toLowerCase().includes(query)
+          : false;
+        if (!titleMatch && !descMatch) return false;
+      }
+
+      return true;
+    });
+  }, [tasks, filterStatus, filterPriority, filterCategory, searchQuery]);
 
   // Show a notification toast
   const showToast = useCallback((message, type = "success") => {
@@ -35,15 +62,8 @@ function App() {
     try {
       setLoading(true);
       setError("");
-      
-      // Build search params
-      const params = {};
-      if (filterStatus !== "all") params.status = filterStatus;
-      if (filterPriority !== "all") params.priority = filterPriority;
-      if (filterCategory !== "all") params.category = filterCategory;
-      if (searchQuery.trim() !== "") params.search = searchQuery.trim();
 
-      const res = await axios.get(API, { params });
+      const res = await axios.get(API);
       setTasks(res.data);
     } catch (err) {
       console.error("Error fetching tasks:", err);
@@ -52,9 +72,9 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterPriority, filterCategory, searchQuery, showToast]);
+  }, [showToast]);
 
-  // Fetch tasks on filter change
+  // Fetch tasks on mount
   useEffect(() => {
     getTasks();
   }, [getTasks]);
@@ -95,11 +115,11 @@ function App() {
       const res = await axios.put(`${API}/${task._id}`, {
         completed: !task.completed,
       });
-      
+
       setTasks((prevTasks) =>
         prevTasks.map((t) => (t._id === task._id ? res.data : t))
       );
-      
+
       if (!task.completed) {
         showToast("👏 Task checked off!");
       } else {
@@ -264,7 +284,7 @@ function App() {
             </div>
           ) : (
             <TodoList
-              tasks={tasks}
+              tasks={filteredTasks}
               deleteTask={deleteTask}
               toggleComplete={toggleComplete}
               setEditTask={setEditTask}
